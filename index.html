@@ -3,9 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; font-src https://cdnjs.cloudflare.com; img-src 'self' data:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none';">
 <title>All-Ways Logistics — Customer Intelligence Dashboard</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" integrity="sha384-/o6I2CkkWC//PSjvWC/eYN7l3xM3tJm8ZzVkCOfp//W05QcE3mlGskpoHB6XqI+B" crossorigin="anonymous">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g" crossorigin="anonymous"></script>
 <style>
   :root {
     --bg-primary:#f0f4f8;--bg-secondary:#ffffff;--bg-card:#ffffff;
@@ -313,6 +314,15 @@
 
 <script>
 // ============================================================
+// SECURITY — HTML entity escaping to prevent XSS
+// ============================================================
+function esc(str) {
+  const d = document.createElement('div');
+  d.appendChild(document.createTextNode(str));
+  return d.innerHTML;
+}
+
+// ============================================================
 // DATA — pre-deduplicated to one row per unique customer code
 // Each row: [countryIdx, branchIdx, lovIdx, kycIdx, termIdx, msmeIdx, "YYYY-MM"]
 // ============================================================
@@ -497,10 +507,10 @@ function updateInsights(agg) {
 
   document.getElementById('insightRow').innerHTML = `
     <div class="insight-pill"><i class="fa-solid fa-globe" style="color:var(--accent1)"></i><span>Active in <strong>${agg.uniqueCountriesCount} countries</strong> in selection</span></div>
-    ${topC ? `<div class="insight-pill"><i class="fa-solid fa-flag" style="color:#10b981"></i><span><strong>${topC[0]}</strong> is the largest market — ${fmt(topC[1])} unique customers</span></div>` : ''}
-    <div class="insight-pill"><i class="fa-solid fa-ban" style="color:#ef4444"></i><span><strong>${blockPct}</strong> of unique customers are blocked</span></div>
-    <div class="insight-pill"><i class="fa-solid fa-coins" style="color:#f59e0b"></i><span>Cash term: <strong>${cashPct}</strong> of accounts</span></div>
-    <div class="insight-pill"><i class="fa-solid fa-chart-line" style="color:var(--accent2)"></i><span>Peak acquisition month: <strong>${peakMonth}</strong> (${fmt(peakVal)} customers)</span></div>
+    ${topC ? `<div class="insight-pill"><i class="fa-solid fa-flag" style="color:#10b981"></i><span><strong>${esc(topC[0])}</strong> is the largest market — ${esc(fmt(topC[1]))} unique customers</span></div>` : ''}
+    <div class="insight-pill"><i class="fa-solid fa-ban" style="color:#ef4444"></i><span><strong>${esc(blockPct)}</strong> of unique customers are blocked</span></div>
+    <div class="insight-pill"><i class="fa-solid fa-coins" style="color:#f59e0b"></i><span>Cash term: <strong>${esc(cashPct)}</strong> of accounts</span></div>
+    <div class="insight-pill"><i class="fa-solid fa-chart-line" style="color:var(--accent2)"></i><span>Peak acquisition month: <strong>${esc(peakMonth)}</strong> (${esc(fmt(peakVal))} customers)</span></div>
   `;
 }
 
@@ -543,7 +553,7 @@ function buildLovChart(agg, c) {
     const p = total > 0 ? ((vals[i] / total) * 100).toFixed(1) : 0;
     return `<div>
       <div class="progress-info">
-        <span class="progress-label" style="color:${c.status[i]};font-weight:600;">${l}</span>
+        <span class="progress-label" style="color:${c.status[i]};font-weight:600;">${esc(l)}</span>
         <span class="progress-val">${vals[i].toLocaleString()} <span style="color:var(--text-muted);font-weight:400;">(${p}%)</span></span>
       </div>
       <div class="progress-bar"><div class="progress-fill" style="width:${p}%;background:${c.status[i]};"></div></div>
@@ -583,7 +593,7 @@ function buildBranchList(agg, c) {
     const label = name.length > 42 ? name.substring(0, 42) + '…' : name;
     return `<div>
       <div class="progress-info">
-        <span class="progress-label" title="${name}">${label}</span>
+        <span class="progress-label" title="${esc(name)}">${esc(label)}</span>
         <span class="progress-val">${val.toLocaleString()}</span>
       </div>
       <div class="progress-bar"><div class="progress-fill" style="width:${p}%;background:${c.palette[i % c.palette.length]};"></div></div>
@@ -619,7 +629,7 @@ function buildMsmeChart(agg, c) {
   });
   document.getElementById('msmeLegend').innerHTML = labels.map((l, i) =>
     `<div class="progress-info">
-      <span class="progress-label" style="color:${msmeColors[i]};font-weight:600;">${l}</span>
+      <span class="progress-label" style="color:${msmeColors[i]};font-weight:600;">${esc(l)}</span>
       <span class="progress-val">${vals[i].toLocaleString()}</span>
     </div>`
   ).join('');
@@ -640,7 +650,7 @@ function buildTermChart(agg, c) {
   document.getElementById('termLegend').innerHTML = labels.map((l, i) => {
     const p = total > 0 ? ((vals[i] / total) * 100).toFixed(1) : 0;
     return `<div class="progress-info">
-      <span class="progress-label" style="color:${termColors[i]};font-weight:600;">${l}</span>
+      <span class="progress-label" style="color:${termColors[i]};font-weight:600;">${esc(l)}</span>
       <span class="progress-val">${vals[i].toLocaleString()} <span style="color:var(--text-muted);font-weight:400;">(${p}%)</span></span>
     </div>`;
   }).join('');
@@ -650,9 +660,9 @@ function buildGeoBubbles(agg, c) {
   const max = agg.topCountries.length > 0 ? agg.topCountries[0][1] : 1;
   document.getElementById('geoBubbles').innerHTML = agg.topCountries.map(([name, val], i) => {
     const barPct = Math.max(20, (val / max) * 100);
-    return `<div class="country-bubble" title="${name}: ${val.toLocaleString()} unique customers">
-      <div class="bubble-count" style="color:${c.palette[i % c.palette.length]}">${val.toLocaleString()}</div>
-      <div class="bubble-name">${name}</div>
+    return `<div class="country-bubble" title="${esc(name)}: ${esc(val.toLocaleString())} unique customers">
+      <div class="bubble-count" style="color:${c.palette[i % c.palette.length]}">${esc(val.toLocaleString())}</div>
+      <div class="bubble-name">${esc(name)}</div>
       <div class="bubble-bar" style="background:linear-gradient(90deg,${c.palette[i%c.palette.length]},${c.palette[(i+1)%c.palette.length]});width:${barPct}%;"></div>
     </div>`;
   }).join('');
