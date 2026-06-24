@@ -327,18 +327,21 @@ const ROWS      = [[61,5,0,0,1,2,"2013-04"],[61,5,1,0,1,2,"2013-04"],[61,5,0,0,1
 // ============================================================
 // THEME
 // ============================================================
-const savedTheme = localStorage.getItem('aw-theme') || 'light';
+let savedTheme = 'light';
+try { savedTheme = localStorage.getItem('aw-theme') || 'light'; } catch(e) { console.warn('localStorage unavailable, using default theme:', e.message); }
 document.documentElement.setAttribute('data-theme', savedTheme);
 function updateThemeBtn() {
   const dark = document.documentElement.getAttribute('data-theme') === 'dark';
-  document.getElementById('themeIcon').className = dark ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
-  document.getElementById('themeLabel').textContent = dark ? 'Light Mode' : 'Dark Mode';
+  const icon = document.getElementById('themeIcon');
+  const label = document.getElementById('themeLabel');
+  if (icon)  icon.className = dark ? 'fa-solid fa-sun' : 'fa-solid fa-moon';
+  if (label) label.textContent = dark ? 'Light Mode' : 'Dark Mode';
 }
 updateThemeBtn();
 function toggleTheme() {
   const cur = document.documentElement.getAttribute('data-theme');
   document.documentElement.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
-  localStorage.setItem('aw-theme', document.documentElement.getAttribute('data-theme'));
+  try { localStorage.setItem('aw-theme', document.documentElement.getAttribute('data-theme')); } catch(e) { console.warn('Could not persist theme preference:', e.message); }
   updateThemeBtn();
   renderAll();
 }
@@ -370,14 +373,20 @@ function C() {
 // Every metric counts unique customers because ROWS is already
 // deduplicated — one entry per unique customer code.
 // ============================================================
+function getEl(id) {
+  const el = document.getElementById(id);
+  if (!el) console.error(`Missing DOM element: #${id}`);
+  return el;
+}
+
 function getFilters() {
   return {
-    country:  document.getElementById('filterCountry').value,
-    branch:   document.getElementById('filterBranch').value,
-    status:   document.getElementById('filterStatus').value,
-    kyc:      document.getElementById('filterKYC').value,
-    dateFrom: document.getElementById('filterDateFrom').value.substring(0, 7),
-    dateTo:   document.getElementById('filterDateTo').value.substring(0, 7),
+    country:  (getEl('filterCountry')  || {}).value || '',
+    branch:   (getEl('filterBranch')    || {}).value || '',
+    status:   (getEl('filterStatus')    || {}).value || '',
+    kyc:      (getEl('filterKYC')       || {}).value || '',
+    dateFrom: ((getEl('filterDateFrom') || {}).value || '').substring(0, 7),
+    dateTo:   ((getEl('filterDateTo')   || {}).value || '').substring(0, 7),
   };
 }
 
@@ -451,40 +460,62 @@ function aggregate() {
 let charts = {};
 
 function destroyCharts() {
-  Object.values(charts).forEach(ch => { try { ch.destroy(); } catch(e) {} });
+  Object.values(charts).forEach(ch => {
+    try { ch.destroy(); } catch(e) { console.error('Failed to destroy chart:', e); }
+  });
   charts = {};
 }
 
 function renderAll() {
-  const agg = aggregate();
-  const c   = C();
+  try {
+    var agg = aggregate();
+  } catch(e) {
+    console.error('Data aggregation failed:', e);
+    showError('Failed to aggregate data. Please try resetting filters.');
+    return;
+  }
+  const c = C();
   updateKPIs(agg);
   updateInsights(agg);
   destroyCharts();
-  buildCountryChart(agg, c);
-  buildLovChart(agg, c);
-  buildTrendChart(agg, c);
-  buildBranchList(agg, c);
-  buildKycChart(agg, c);
-  buildMsmeChart(agg, c);
-  buildTermChart(agg, c);
-  buildGeoBubbles(agg, c);
+  const chartBuilders = [
+    ['country', buildCountryChart],
+    ['lov',     buildLovChart],
+    ['trend',   buildTrendChart],
+    ['branch',  buildBranchList],
+    ['kyc',     buildKycChart],
+    ['msme',    buildMsmeChart],
+    ['term',    buildTermChart],
+    ['geo',     buildGeoBubbles],
+  ];
+  for (const [name, builder] of chartBuilders) {
+    try {
+      builder(agg, c);
+    } catch(e) {
+      console.error(`Failed to render ${name} chart:`, e);
+    }
+  }
 }
 
 function fmt(n) { return n.toLocaleString(); }
 function pct(n, d) { return d > 0 ? ((n / d) * 100).toFixed(1) + '%' : '0%'; }
 
+function setContent(id, value, prop) {
+  const el = getEl(id);
+  if (el) el[prop || 'textContent'] = value;
+}
+
 function updateKPIs(agg) {
-  document.getElementById('kpiTotal').textContent     = fmt(agg.total);
-  document.getElementById('kpiActive').textContent    = fmt(agg.active);
-  document.getElementById('kpiBlocked').textContent   = fmt(agg.blocked);
-  document.getElementById('kpiCountries').textContent = fmt(agg.uniqueCountriesCount);
-  document.getElementById('kpiRecent').textContent    = fmt(agg.recent);
-  document.getElementById('hdrCustomers').textContent = fmt(agg.total);
-  document.getElementById('kpiActivePct').innerHTML   = `<i class="fa-solid fa-arrow-up"></i> ${pct(agg.active,  agg.total)} of total`;
-  document.getElementById('kpiBlockedPct').innerHTML  = `<i class="fa-solid fa-arrow-up"></i> ${pct(agg.blocked, agg.total)} of total`;
+  setContent('kpiTotal',     fmt(agg.total));
+  setContent('kpiActive',    fmt(agg.active));
+  setContent('kpiBlocked',   fmt(agg.blocked));
+  setContent('kpiCountries', fmt(agg.uniqueCountriesCount));
+  setContent('kpiRecent',    fmt(agg.recent));
+  setContent('hdrCustomers', fmt(agg.total));
+  setContent('kpiActivePct',  `<i class="fa-solid fa-arrow-up"></i> ${pct(agg.active,  agg.total)} of total`, 'innerHTML');
+  setContent('kpiBlockedPct', `<i class="fa-solid fa-arrow-up"></i> ${pct(agg.blocked, agg.total)} of total`, 'innerHTML');
   const kycYes = agg.kycCount[1] || 0;
-  document.getElementById('kycRate').textContent = pct(kycYes, agg.total);
+  setContent('kycRate', pct(kycYes, agg.total));
 }
 
 function updateInsights(agg) {
@@ -495,17 +526,19 @@ function updateInsights(agg) {
   let peakMonth = 'N/A', peakVal = 0;
   agg.trendLabels.forEach((l, i) => { if (agg.trendData[i] > peakVal) { peakVal = agg.trendData[i]; peakMonth = l; } });
 
-  document.getElementById('insightRow').innerHTML = `
+  setContent('insightRow', `
     <div class="insight-pill"><i class="fa-solid fa-globe" style="color:var(--accent1)"></i><span>Active in <strong>${agg.uniqueCountriesCount} countries</strong> in selection</span></div>
     ${topC ? `<div class="insight-pill"><i class="fa-solid fa-flag" style="color:#10b981"></i><span><strong>${topC[0]}</strong> is the largest market — ${fmt(topC[1])} unique customers</span></div>` : ''}
     <div class="insight-pill"><i class="fa-solid fa-ban" style="color:#ef4444"></i><span><strong>${blockPct}</strong> of unique customers are blocked</span></div>
     <div class="insight-pill"><i class="fa-solid fa-coins" style="color:#f59e0b"></i><span>Cash term: <strong>${cashPct}</strong> of accounts</span></div>
     <div class="insight-pill"><i class="fa-solid fa-chart-line" style="color:var(--accent2)"></i><span>Peak acquisition month: <strong>${peakMonth}</strong> (${fmt(peakVal)} customers)</span></div>
-  `;
+  `, 'innerHTML');
 }
 
 function buildCountryChart(agg, c) {
-  charts.country = new Chart(document.getElementById('countryChart'), {
+  const countryCanvas = getEl('countryChart');
+  if (!countryCanvas) return;
+  charts.country = new Chart(countryCanvas, {
     type: 'bar',
     data: {
       labels: agg.topCountries.map(x => x[0]),
@@ -532,14 +565,18 @@ function buildLovChart(agg, c) {
   const vals   = [agg.lovCount[0]||0, agg.lovCount[1]||0, agg.lovCount[2]||0];
   const labels = ['BLOCK', 'DISPLAY', 'HIDE'];
   const total  = vals.reduce((a, b) => a + b, 0);
-  charts.lov = new Chart(document.getElementById('lovChart'), {
+  const lovCanvas = getEl('lovChart');
+  if (!lovCanvas) return;
+  charts.lov = new Chart(lovCanvas, {
     type: 'doughnut',
     data: { labels, datasets: [{ data: vals, backgroundColor: c.status, borderWidth: 0, hoverOffset: 8 }] },
     options: { responsive:true, maintainAspectRatio:false, cutout:'70%',
       plugins: { legend:{display:false}, tooltip:{callbacks:{label: ctx => ` ${ctx.label}: ${ctx.parsed.toLocaleString()} customers`}}}
     }
   });
-  document.getElementById('lovLegend').innerHTML = labels.map((l, i) => {
+  const lovLegendEl = getEl('lovLegend');
+  if (!lovLegendEl) return;
+  lovLegendEl.innerHTML = labels.map((l, i) => {
     const p = total > 0 ? ((vals[i] / total) * 100).toFixed(1) : 0;
     return `<div>
       <div class="progress-info">
@@ -552,7 +589,9 @@ function buildLovChart(agg, c) {
 }
 
 function buildTrendChart(agg, c) {
-  charts.trend = new Chart(document.getElementById('trendChart'), {
+  const trendCanvas = getEl('trendChart');
+  if (!trendCanvas) return;
+  charts.trend = new Chart(trendCanvas, {
     type: 'line',
     data: {
       labels: agg.trendLabels,
@@ -578,7 +617,9 @@ function buildTrendChart(agg, c) {
 
 function buildBranchList(agg, c) {
   const max = agg.topBranches.length > 0 ? agg.topBranches[0][1] : 1;
-  document.getElementById('branchList').innerHTML = agg.topBranches.map(([name, val], i) => {
+  const branchListEl = getEl('branchList');
+  if (!branchListEl) return;
+  branchListEl.innerHTML = agg.topBranches.map(([name, val], i) => {
     const p     = ((val / max) * 100).toFixed(1);
     const label = name.length > 42 ? name.substring(0, 42) + '…' : name;
     return `<div>
@@ -594,7 +635,9 @@ function buildBranchList(agg, c) {
 function buildKycChart(agg, c) {
   const yes = agg.kycCount[1] || 0;
   const no  = agg.kycCount[0] || 0;
-  charts.kyc = new Chart(document.getElementById('kycChart'), {
+  const kycCanvas = getEl('kycChart');
+  if (!kycCanvas) return;
+  charts.kyc = new Chart(kycCanvas, {
     type: 'doughnut',
     data: { labels: ['Not Verified', 'KYC Verified'], datasets: [{ data:[no, yes], backgroundColor:[c.red, c.green], borderWidth:0, hoverOffset:8 }] },
     options: { responsive:true, maintainAspectRatio:false, cutout:'65%',
@@ -610,14 +653,18 @@ function buildMsmeChart(agg, c) {
   const msmeColors = [c.accent, c.green];
   const vals       = [agg.msmeCount[0]||0, agg.msmeCount[1]||0];
   const labels     = ['MSME Registered', 'Non-MSME'];
-  charts.msme = new Chart(document.getElementById('msmeChart'), {
+  const msmeCanvas = getEl('msmeChart');
+  if (!msmeCanvas) return;
+  charts.msme = new Chart(msmeCanvas, {
     type: 'doughnut',
     data: { labels, datasets: [{ data:vals, backgroundColor:msmeColors, borderWidth:0, hoverOffset:8 }] },
     options: { responsive:true, maintainAspectRatio:false, cutout:'65%',
       plugins: { legend:{display:false}, tooltip:{callbacks:{label: ctx => ` ${ctx.label}: ${ctx.parsed.toLocaleString()} customers`}}}
     }
   });
-  document.getElementById('msmeLegend').innerHTML = labels.map((l, i) =>
+  const msmeLegendEl = getEl('msmeLegend');
+  if (!msmeLegendEl) return;
+  msmeLegendEl.innerHTML = labels.map((l, i) =>
     `<div class="progress-info">
       <span class="progress-label" style="color:${msmeColors[i]};font-weight:600;">${l}</span>
       <span class="progress-val">${vals[i].toLocaleString()}</span>
@@ -630,14 +677,18 @@ function buildTermChart(agg, c) {
   const vals       = [agg.termCount[0]||0, agg.termCount[1]||0, agg.termCount[2]||0];
   const labels     = ['CASH', 'CREDIT', 'PDC'];
   const total      = vals.reduce((a, b) => a + b, 0);
-  charts.term = new Chart(document.getElementById('termChart'), {
+  const termCanvas = getEl('termChart');
+  if (!termCanvas) return;
+  charts.term = new Chart(termCanvas, {
     type: 'doughnut',
     data: { labels, datasets: [{ data:vals, backgroundColor:termColors, borderWidth:0, hoverOffset:8 }] },
     options: { responsive:true, maintainAspectRatio:false, cutout:'65%',
       plugins: { legend:{display:false}, tooltip:{callbacks:{label: ctx => ` ${ctx.label}: ${ctx.parsed.toLocaleString()} customers`}}}
     }
   });
-  document.getElementById('termLegend').innerHTML = labels.map((l, i) => {
+  const termLegendEl = getEl('termLegend');
+  if (!termLegendEl) return;
+  termLegendEl.innerHTML = labels.map((l, i) => {
     const p = total > 0 ? ((vals[i] / total) * 100).toFixed(1) : 0;
     return `<div class="progress-info">
       <span class="progress-label" style="color:${termColors[i]};font-weight:600;">${l}</span>
@@ -648,7 +699,9 @@ function buildTermChart(agg, c) {
 
 function buildGeoBubbles(agg, c) {
   const max = agg.topCountries.length > 0 ? agg.topCountries[0][1] : 1;
-  document.getElementById('geoBubbles').innerHTML = agg.topCountries.map(([name, val], i) => {
+  const geoBubblesEl = getEl('geoBubbles');
+  if (!geoBubblesEl) return;
+  geoBubblesEl.innerHTML = agg.topCountries.map(([name, val], i) => {
     const barPct = Math.max(20, (val / max) * 100);
     return `<div class="country-bubble" title="${name}: ${val.toLocaleString()} unique customers">
       <div class="bubble-count" style="color:${c.palette[i % c.palette.length]}">${val.toLocaleString()}</div>
@@ -662,31 +715,67 @@ function buildGeoBubbles(agg, c) {
 // POPULATE DROPDOWNS
 // ============================================================
 function populateFilters() {
-  const cs = document.getElementById('filterCountry');
-  COUNTRIES.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; cs.appendChild(o); });
-  const bs = document.getElementById('filterBranch');
-  BRANCHES.forEach(b => { const o = document.createElement('option'); o.value = b; o.textContent = b.length > 45 ? b.substring(0,45)+'…' : b; bs.appendChild(o); });
+  const cs = getEl('filterCountry');
+  if (cs) {
+    COUNTRIES.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; cs.appendChild(o); });
+  }
+  const bs = getEl('filterBranch');
+  if (bs) {
+    BRANCHES.forEach(b => { const o = document.createElement('option'); o.value = b; o.textContent = b.length > 45 ? b.substring(0,45)+'…' : b; bs.appendChild(o); });
+  }
 }
 
 function applyFilters() { renderAll(); }
 
 function resetFilters() {
-  document.getElementById('filterCountry').value  = '';
-  document.getElementById('filterBranch').value   = '';
-  document.getElementById('filterStatus').value   = '';
-  document.getElementById('filterKYC').value      = '';
-  document.getElementById('filterDateFrom').value = '2012-12-27';
-  document.getElementById('filterDateTo').value   = '2021-05-16';
+  const defaults = {
+    filterCountry: '', filterBranch: '', filterStatus: '', filterKYC: '',
+    filterDateFrom: '2012-12-27', filterDateTo: '2021-05-16',
+  };
+  for (const [id, val] of Object.entries(defaults)) {
+    const el = getEl(id);
+    if (el) el.value = val;
+  }
   renderAll();
 }
 
 // ============================================================
 // INIT
 // ============================================================
+function showError(msg) {
+  console.error('[Dashboard Error]', msg);
+  const overlay = getEl('loadingOverlay');
+  if (overlay) {
+    const text = overlay.querySelector('.loading-text');
+    if (text) {
+      text.textContent = msg;
+      text.style.color = 'var(--accent-danger)';
+    }
+    overlay.classList.remove('hidden');
+  }
+}
+
+window.addEventListener('error', function(event) {
+  console.error('Uncaught error:', event.error || event.message);
+});
+
 window.addEventListener('load', () => {
-  populateFilters();
-  renderAll();
-  setTimeout(() => { document.getElementById('loadingOverlay').classList.add('hidden'); }, 900);
+  if (typeof Chart === 'undefined') {
+    showError('Chart.js failed to load. Check your network connection and reload.');
+    return;
+  }
+  try {
+    populateFilters();
+    renderAll();
+  } catch(e) {
+    console.error('Dashboard initialization failed:', e);
+    showError('Dashboard failed to initialize. See browser console for details.');
+    return;
+  }
+  setTimeout(() => {
+    const overlay = getEl('loadingOverlay');
+    if (overlay) overlay.classList.add('hidden');
+  }, 900);
 });
 </script>
 </body>
